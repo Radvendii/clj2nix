@@ -1,8 +1,9 @@
 {
   stdenv, lib, coreutils, clojure,
   makeWrapper, nix-prefetch-git,
-  fetchMavenArtifact, fetchgit,
-  openjdk, fetchFromGitHub, git
+  nix-prefetch, fetchMavenArtifact,
+  fetchgit, openjdk, fetchFromGitHub,
+  git
 }:
 
 let cljdeps = import ./deps.nix { inherit fetchMavenArtifact fetchgit lib; };
@@ -37,12 +38,13 @@ in stdenv.mkDerivation rec {
   installPhase = ''
     mkdir -p $out/{bin,lib}
     cp -rT classes $out/lib
+    cp src/clj2nix/fetchmavenartifacts.nix $out/lib
     makeWrapper ${openjdk}/bin/java $out/bin/clj2nix \
       --add-flags "-Dlog4j.rootLogger=FATAL" \
       --add-flags "-cp" \
       --add-flags "${classp}" \
       --add-flags "clj2nix.core" \
       --add-flags "${version}" \
-      --prefix PATH : "$PATH:${lib.makeBinPath [ coreutils nix-prefetch-git ]}"
+      --prefix PATH : "$PATH:${lib.makeBinPath [ coreutils nix-prefetch-git nix-prefetch ]}"
   '';
 }

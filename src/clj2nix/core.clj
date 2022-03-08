@@ -21,32 +21,14 @@
        (str "\n")))
 
 (defn- prefix [{:keys [mvn-repos]}]
-  (str "{ fetchMavenArtifact, fetchgit, lib }:
+  (str "{ fetchMavenArtifacts, linkFarm, fetchgit, lib }:
 
 let repos = [" (repos-nix mvn-repos) " ];
-
   in rec {
-      makePaths = {extraClasspaths ? []}:
-        if (builtins.typeOf extraClasspaths != \"list\")
-        then builtins.throw \"extraClasspaths must be of type 'list'!\"
-        else (lib.concatMap (dep:
-          builtins.map (path:
-            if builtins.isString path then
-              path
-            else if builtins.hasAttr \"jar\" path then
-              path.jar
-            else if builtins.hasAttr \"outPath\" path then
-              path.outPath
-            else
-              path
-            )
-          dep.paths)
-        packages) ++ extraClasspaths;
-      makeClasspaths = {extraClasspaths ? []}:
-       if (builtins.typeOf extraClasspaths != \"list\")
-       then builtins.throw \"extraClasspaths must be of type 'list'!\"
-       else builtins.concatStringsSep \":\" (makePaths {inherit extraClasspaths;});
-      packageSources = builtins.map (dep: dep.src) packages;
+      mvnRepo = linkFarm \"mvn-repo\" (map (p: {
+        name = \"${builtins.replaceStrings [\".\"] [\"/\"] p.src.groupId}/${p.src.artifactId}/${p.src.version}\";
+        path = p.src;
+      }) (lib.filter (p: p.src.repoType or null == \"maven\") packages));
       packages = ["))
 
 (def ^:priave suffix
@@ -55,7 +37,7 @@ let repos = [" (repos-nix mvn-repos) " ];
   }
   ")
 
-(defn- maven-item [artifactID groupID sha512 version classifier]
+(defn- maven-item [artifactID groupID sha256jar sha256pom sha256jarsha1 sha256pomsha1 version classifier]
   (let [name (str artifactID "/" groupID)
         classifier-str
         (if-not classifier
@@ -64,17 +46,22 @@ let repos = [" (repos-nix mvn-repos) " ];
    (format "
   rec {
     name = \"%s\";
-    src = fetchMavenArtifact {
+    src = fetchMavenArtifacts {
       inherit repos;
       artifactId = \"%s\";
       groupId = \"%s\";
-      sha512 = \"%s\";
       version = \"%s\";
+      sha256s = {
+        jar = \"%s\";
+        pom = \"%s\";
+        \"jar.sha1\" = \"%s\";
+        \"pom.sha1\" = \"%s\";
+      };
       %s
     };
     paths = [ src ];
   }
-" name artifactID groupID sha512 (str version) classifier-str)))
+" name artifactID groupID (str version) sha256jar sha256pom sha256jarsha1 sha256pomsha1 classifier-str)))
 
 (defn- git-source-paths [{:keys [paths] :deps/keys [root]}]
   (map #(str/replace-first % root "") paths))
@@ -117,10 +104,16 @@ let repos = [" (repos-nix mvn-repos) " ];
                           "--rev" rev))]
     (get (json/read-str result) "sha256")))
 
-(defn- resolve-sha512 [filepath]
-  (assert (.exists (io/as-file filepath))
-          (str filepath " " "doesn't exists."))
-  (subs (:out (sh "sha512sum" filepath)) 0 128))
+(defn- resolve-maven-sha256 [ext artifactID groupID version classifier]
+  (string/trim-newline
+    (:out (sh "nix-prefetch" "-E"
+              (format
+                "{ artifactId, groupId, version, ext }: { sha256 }: ((import <nixpkgs> { }).callPackage %s {  } { inherit artifactId groupId version; sha256s.${ext} = sha256; }).${ext}"
+                (.getPath (io/resource "fetchmavenartifacts.nix")))
+              "--argstr" "artifactId" artifactID
+              "--argstr" "groupId" groupID
+              "--argstr" "version" version
+              "--argstr" "ext" ext))))
 
 (defn- generate-items [deps]
   (->> (seq deps)
@@ -154,7 +147,10 @@ let repos = [" (repos-nix mvn-repos) " ];
                                    acc
                                    (maven-item artifactID
                                                groupID
-                                               (resolve-sha512 (first (:paths dep)))
+                                               (resolve-maven-sha256 "jar" artifactID groupID (:mvn/version dep) classifier)
+                                               (resolve-maven-sha256 "pom" artifactID groupID (:mvn/version dep) classifier)
+                                               (resolve-maven-sha256 "jar.sha1" artifactID groupID (:mvn/version dep) classifier)
+                                               (resolve-maven-sha256 "pom.sha1" artifactID groupID (:mvn/version dep) classifier)
                                                (:mvn/version dep)
                                                classifier)))))) [])
        (apply str)))
