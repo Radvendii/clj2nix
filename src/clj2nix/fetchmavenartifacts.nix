@@ -1,4 +1,3 @@
-# adapted from https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/fetchmavenartifact/default.nix
 { lib, fetchurl, stdenv, linkFarm }:
 args@
 { # Example: "org.apache.httpcomponents"
@@ -34,12 +33,12 @@ let
       "${artifactId}-${version}${lib.optionalString (!isNull classifier) "-${classifier}"}.${ext}"
     ];
 
-  srcs = lib.genAttrs [ "jar" "pom" "jar.sha1" "pom.sha1" ]
-    (ext: fetchurl {
+  srcs = lib.mapAttrs (ext: sha256:
+    fetchurl {
       urls = map (mkUrl ext) repos;
       name = "${name_}.${ext}";
-      sha256 = sha256s.${ext};
-    });
+      inherit sha256;
+    }) sha256s;
 in
 # linkFarm name_ (map (ext: {
 #   name = "${artifactId}-${version}.${ext}";
