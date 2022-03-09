@@ -37,7 +37,7 @@ let repos = [" (repos-nix mvn-repos) " ];
   }
   ")
 
-(defn- maven-item [artifactID groupID sha256jar sha256pom sha256jarsha1 sha256pomsha1 version classifier]
+(defn- maven-item [artifactID groupID sha256jar sha256pom version classifier]
   (let [name (str artifactID "/" groupID)
         classifier-str
         (if-not classifier
@@ -54,14 +54,12 @@ let repos = [" (repos-nix mvn-repos) " ];
       sha256s = {
         jar = \"%s\";
         pom = \"%s\";
-        \"jar.sha1\" = \"%s\";
-        \"pom.sha1\" = \"%s\";
       };
       %s
     };
     paths = [ src ];
   }
-" name artifactID groupID (str version) sha256jar sha256pom sha256jarsha1 sha256pomsha1 classifier-str)))
+" name artifactID groupID (str version) sha256jar sha256pom classifier-str)))
 
 (defn- git-source-paths [{:keys [paths] :deps/keys [root]}]
   (map #(str/replace-first % root "") paths))
@@ -149,8 +147,6 @@ let repos = [" (repos-nix mvn-repos) " ];
                                                groupID
                                                (resolve-maven-sha256 "jar" artifactID groupID (:mvn/version dep) classifier)
                                                (resolve-maven-sha256 "pom" artifactID groupID (:mvn/version dep) classifier)
-                                               (resolve-maven-sha256 "jar.sha1" artifactID groupID (:mvn/version dep) classifier)
-                                               (resolve-maven-sha256 "pom.sha1" artifactID groupID (:mvn/version dep) classifier)
                                                (:mvn/version dep)
                                                classifier)))))) [])
        (apply str)))
