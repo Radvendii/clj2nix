@@ -50,7 +50,7 @@ let repos = [" (repos-nix mvn-repos) " ];
       inherit repos artifactId groupId sha512 version;
       %s
     };
-    dependents = [ %s];
+    dependents = [ %s ];
     paths = [ src ];
   };
 " name artifactID groupID sha512 (str version) classifier-str
@@ -70,7 +70,7 @@ let repos = [" (repos-nix mvn-repos) " ];
       rev = \"%s\";
       sha256 = \"%s\";
     };
-    dependents = [ %s];
+    dependents = [ %s ];
     paths = map (path: src + path) [
       %s
     ];
