@@ -26,74 +26,59 @@
 let repos = [" (repos-nix mvn-repos) " ];
 
   in rec {
-      makePaths = {extraClasspaths ? []}:
-        if (builtins.typeOf extraClasspaths != \"list\")
-        then builtins.throw \"extraClasspaths must be of type 'list'!\"
-        else (lib.concatMap (dep:
-          builtins.map (path:
-            if builtins.isString path then
-              path
-            else if builtins.hasAttr \"jar\" path then
-              path.jar
-            else if builtins.hasAttr \"outPath\" path then
-              path.outPath
-            else
-              path
-            )
-          dep.paths)
-        packages) ++ extraClasspaths;
-      makeClasspaths = {extraClasspaths ? []}:
-       if (builtins.typeOf extraClasspaths != \"list\")
-       then builtins.throw \"extraClasspaths must be of type 'list'!\"
-       else builtins.concatStringsSep \":\" (makePaths {inherit extraClasspaths;});
-      packageSources = builtins.map (dep: dep.src) packages;
-      packages = ["))
+      packages = {"))
 
 (def ^:priave suffix
   "
-  ];
+  };
   }
   ")
 
-(defn- maven-item [artifactID groupID sha512 version classifier]
-  (let [name (str artifactID "/" groupID)
+(defn- maven-item [artifactID groupID sha512 version classifier dependents]
+  (let [name (str groupID "/" artifactID)
         classifier-str
         (if-not classifier
           ""
           (format "classifier = \"%s\";" classifier))]
    (format "
-  rec {
-    name = \"%s\";
+  \"%s\" = rec {
+    artifactId = \"%s\";
+    groupId = \"%s\";
+    sha512 = \"%s\";
+    version = \"%s\";
     src = fetchMavenArtifact {
-      inherit repos;
-      artifactId = \"%s\";
-      groupId = \"%s\";
-      sha512 = \"%s\";
-      version = \"%s\";
+      inherit repos artifactId groupId sha512 version;
       %s
     };
+    dependents = [ %s];
     paths = [ src ];
-  }
-" name artifactID groupID sha512 (str version) classifier-str)))
+  };
+" name artifactID groupID sha512 (str version) classifier-str
+          (->> dependents
+               (map #(format "\"%s\"" %))
+               (str/join " ")))))
 
 (defn- git-source-paths [{:keys [paths] :deps/keys [root]}]
   (map #(str/replace-first % root "") paths))
 
-(defn- git-item [name artifactID url rev sha256 source-paths]
+(defn- git-item [name artifactID url rev sha256 dependents source-paths]
   (format "
-  (rec {
-    name = \"%s\";
+  \"%s\" = rec {
     src = fetchgit {
       name = \"%s\";
       url = \"%s\";
       rev = \"%s\";
       sha256 = \"%s\";
     };
+    dependents = [ %s];
     paths = map (path: src + path) [
       %s
     ];
-  })
+  };
 " (str name) artifactID url rev sha256
+          (->> dependents
+               (map #(format "\"%s\"" %))
+               (str/join " "))
           (->> source-paths
                (map #(format "\"%s\"" %))
                (str/join "\n        "))))
@@ -149,6 +134,7 @@ let repos = [" (repos-nix mvn-repos) " ];
                                              (:git/url dep)
                                              (or (:sha dep) (:git/sha dep))
                                              (resolve-git-sha256 (:git/url dep) (or (:sha dep) (:git/sha dep)))
+                                             (:dependents dep)
                                              (git-source-paths dep)))
                        :else      (conj
                                    acc
@@ -156,7 +142,8 @@ let repos = [" (repos-nix mvn-repos) " ];
                                                groupID
                                                (resolve-sha512 (first (:paths dep)))
                                                (:mvn/version dep)
-                                               classifier)))))) [])
+                                               classifier
+                                               (:dependents dep))))))) [])
        (apply str)))
 
 (defn generate-nix-expr
